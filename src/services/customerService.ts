@@ -80,7 +80,6 @@ export class CustomerService {
       throw new Error('Restaurant not found. Please create a restaurant first.');
     }
 
-    // Check if customer already exists
     const existingCustomer = await this.getCustomerByEmail(restaurantId, customerData.email);
     if (existingCustomer) {
       throw new Error('Customer with this email already exists');
@@ -99,7 +98,8 @@ export class CustomerService {
       throw new Error(error.message);
     }
 
-    // Return customer data without signup bonus
+    await this.initializeCustomerConsent(data.id, restaurantId);
+
     return data;
   }
 
@@ -273,8 +273,8 @@ export class CustomerService {
       const totalCustomers = customers.length;
       const newThisMonth = customers.filter(c => new Date(c.created_at) >= startOfMonth).length;
       const totalPoints = customers.reduce((sum, c) => sum + c.total_points, 0);
-      const averageSpent = totalCustomers > 0 
-        ? customers.reduce((sum, c) => sum + c.total_spent, 0) / totalCustomers 
+      const averageSpent = totalCustomers > 0
+        ? customers.reduce((sum, c) => sum + c.total_spent, 0) / totalCustomers
         : 0;
 
       return {
@@ -292,5 +292,65 @@ export class CustomerService {
         averageSpent: 0,
       };
     }
+  }
+
+  static async initializeCustomerConsent(customerId: string, restaurantId: string): Promise<void> {
+    const { error } = await supabase
+      .from('customer_consent')
+      .insert({
+        customer_id: customerId,
+        restaurant_id: restaurantId,
+        push_notifications: true,
+        whatsapp: false,
+        email: true,
+        sms: false,
+      });
+
+    if (error && error.code !== '23505') {
+      throw new Error(error.message);
+    }
+  }
+
+  static async getCustomerConsent(customerId: string, restaurantId: string) {
+    const { data, error } = await supabase
+      .from('customer_consent')
+      .select('*')
+      .eq('customer_id', customerId)
+      .eq('restaurant_id', restaurantId)
+      .maybeSingle();
+
+    if (error) {
+      throw new Error(error.message);
+    }
+
+    return data;
+  }
+
+  static async updateCustomerConsent(
+    customerId: string,
+    restaurantId: string,
+    consent: {
+      push_notifications?: boolean;
+      whatsapp?: boolean;
+      email?: boolean;
+      sms?: boolean;
+    }
+  ) {
+    const { data, error } = await supabase
+      .from('customer_consent')
+      .upsert({
+        customer_id: customerId,
+        restaurant_id: restaurantId,
+        ...consent,
+        updated_at: new Date().toISOString(),
+      })
+      .select()
+      .single();
+
+    if (error) {
+      throw new Error(error.message);
+    }
+
+    return data;
   }
 }
